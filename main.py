@@ -1,102 +1,154 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request, Security
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 from database import SessionLocal, engine
 import models
 from models import UserCreate, UserResponse
-import re
-#the whole trinity is here
+from security import hash_password, verify_password, create_access_token, SECRET_KEY, ALGORITHM
+from email_service import send_otp_email
+from pydantic import BaseModel
+from typing import Optional
+from datetime import timedelta
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+import random, time
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
+import logging
+#the whole trinity
 
+
+#uvicorn main:app --reload
+#Uvicorn is a lightning-fast ASGI server (Asynchronous Server Gateway Interface) used to run FastAPI apps.
+
+
+# logging the time, name, and what happened
+logging.basicConfig(level=logging.INFO, filename="app.log", format="%(asctime)s - %(levelname)s - %(message)s")
+
+#starting the engine
 models.Base.metadata.create_all(bind=engine) 
-#use the declarative Base basemodel
-#get all the metadata from Base *aka the blueprint for the data
-#check the existence of users.db and connect to it *refer to database.py
 
-#turn on FastAPI
+#declearing the app, and limit the amount of access at the time
 app = FastAPI()
+limiter = Limiter(key_func=get_remote_address) #where is that address is and tracking them
+app.state.limiter = limiter
 
-#open & closing new session for each command
+#help with simplifying the process of limit of failed attempts
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": "Too many requests! Slow down bro!"}) #JSONResponse to be later convert in the GUI
+
+
+# Open & closing session
 def get_db():
-    db = SessionLocal() #refer to database.py
+    db = SessionLocal() #a local for that single command or thread
     try:
         yield db
     finally:
         db.close()
 
-#so each @ and def below is a command so that's why multiple threads is ON
+class UserRegister(BaseModel): #the model for userregister:
+    name: str
+    age: int
+    email: str
+    password: str
+    role: Optional[str] = "user"
 
-#essentially "hey app, a request of creating a user is on, get to this path and what the input is"
-@app.post("/users/", response_model=UserResponse) #post is create in CRUD
-#"/users/" is the route path, i know the app is not that smart yet, it is still SQLite
-#response_model is the return to give to the user after completion
 
-#simply getting the input and then executing the function below, by reading user: UserCreate as the input form
+class UserLogin(BaseModel): #what to expect from the user when they are asked to log in
+    email: str
+    password: str
 
-#note that no @app is called in between for this to work
+class OTPVerify(BaseModel): #the email address and otp
+    email: str
+    otp: str
 
-#so this is what being executed to the actual database 
-def create_user(user: UserCreate, db: Session = Depends(get_db)):  #getting the UserCreate then opening a session, get_db is a sessionmaker, and depends is like only when there is a command
-    existing_user = db.query(models.User).filter(models.User.email == user.email).first() #checking the email first
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False) #verifying the token, used after login
+
+# OTP Storage, especially during that time
+otp_store = {}
+
+def generate_otp(): #randomly generating that OTP
+    return str(random.randint(100000, 999999))
+
+def store_otp(email, otp): #then this program is to store with time on it so the time can be tracked
+    otp_store[email] = {"otp": otp, "timestamp": time.time()}
+
+def verify_otp(email, user_input_otp): #verifying that shit
+    if email in otp_store: #checking first the email
+        saved_otp = otp_store[email]["otp"] #defining variables to use later
+        timestamp = otp_store[email]["timestamp"] #
+        if user_input_otp == saved_otp: 
+            if time.time() - timestamp > 300: #checking the time
+                return "OTP expired!" #no
+            return "OTP verified!" #yes
+        return "Invalid OTP!" #correct email but no OTP
+    return "No OTP found!" #incorrect email
+
+# Authentication & Authorization
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)): #defining the function to check the user data using the token
+    credentials_exception = HTTPException(status_code=401, detail="Invalid credentials") #user doesn't exist or the token isn't in there
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]) #checking the payload 
+        email = payload.get("sub") #checking if the email is in the token or not
+        if email is None:
+            raise credentials_exception 
+        user = db.query(models.User).filter(models.User.email == email).first() #if the email is vaid then find the user by email
+        if user is None:
+            raise credentials_exception 
+        return user #returning the userinfo
+    except JWTError:
+        raise credentials_exception #invalid anything then this
+
+@app.post("/login/") #logging in
+@limiter.limit("5/minute") #5 times per minute from that address
+def login(request: Request, user: UserLogin, db: Session = Depends(get_db)): #defining as request for limiter | defining the user form for the user to log in | getting the session
+    db_user = db.query(models.User).filter(models.User.email == user.email).first() #opening session and checking the email
+    if not db_user or not verify_password(user.password, db_user.hashed_password): #checking the password matches with the hashed_password or not
+        logging.warning(f"Failed login attempt: {user.email}") #logging 
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+    otp = generate_otp() #generate the otp
+    store_otp(user.email, otp)
+    send_otp_email(user.email, otp)
+    return {"message": "OTP sent! Please verify to get your token."}
+
+@app.post("/verify-otp/") # verify the OTP to get the token
+def verify_otp_route(otp_data: OTPVerify, db: Session = Depends(get_db)): #otp data is a class from OTPVerify above
+    result = verify_otp(otp_data.email, otp_data.otp) #get the 2 things that are in the otp data
+    if result == "OTP verified!": #getting the result from the function above
+        access_token = create_access_token(data={"sub": otp_data.email}, expires_delta=timedelta(minutes=5)) #get access token, first data is the email and the expiration time is 1 min
+        return {"access_token": access_token, "token_type": "bearer"} #giving the access_token throught the fuction and giving the token type
+    raise HTTPException(status_code=400, detail=result) #the result has been defined before
+
+@app.post("/register/")
+def register(user: UserRegister, db: Session = Depends(get_db)):
+    user_count = db.query(func.count(models.User.id)).scalar()
+    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="you ain't fucking with me dawg!") #registering error 
+        raise HTTPException(status_code=400, detail="Email already registered.")
+    if user_count == 0:
+        user.role = "admin"
 
-    new_user = models.User(name=user.name, age=user.age, email=user.email) #writing out the information from user
-    db.add(new_user) #adding to the database
-    db.commit() #commitment
-    db.refresh(new_user) #refresh to show the newest result because there could be a lag
-    return new_user #return the new_user to the @app in JSON then for the app to reformat to UserResponse
+    hashed_password = hash_password(user.password) #hashing the regester password
+    new_user = models.User(name=user.name, age=user.age, email=user.email, hashed_password=hashed_password, role=user.role) #defining everying for the database
+    db.add(new_user) #adding into the database
+    db.commit() #commit with autoflush disabled
+    db.refresh(new_user) #refresh in the database
+    logging.info(f"User registered: {new_user.email} by {current_user.email}") #again loggin the information
+    return {"message": "User registered successfully"} 
 
-#nah im not explaining the rest
 
-@app.get("/users/{user_id}", response_model=UserResponse) #the user_id is dynamic here and is followed by the principles of the *.post
-def get_user(user_id: int, db: Session = Depends(get_db)): #note that the user_id is decleared above for the function here
-    user = db.query(models.User).filter(models.User.id == user_id).first() #getting the first one
+@app.delete("/users/{user_id}") #delete
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)): #samething as before but now expecting only the user ID
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admins only!")
+    user = db.query(models.User).filter(models.User.id == user_id).first() #get the desired user
     if not user:
-        raise HTTPException(status_code=404, detail=" you sure you got the right one?")
-    return user
-
-
-@app.get("/users/all/", response_model=list[UserResponse]) #getting all of them =))), note that it is now a list of user response
-def get_all_users(db: Session = Depends(get_db)): 
-    users = db.query(models.User).all() #getting all of them yo
-    if not users:
-        raise HTTPException(status_code=404, detail="dawg we ain't have shit, come back later yo!")
-    return users
-
-@app.get("/users/selected/", response_model=list[UserResponse]) #still returning the list, but like the name now is the SELECTED lol
-def get_users(user_ids: str, db: Session = Depends(get_db)): #we don't know if they will give 1, 2, 3 or 1 2 3
-    user_id_list = [int(id) for id in re.split(r"[, ]+", user_ids.strip()) if id]  #so we use regular expression to get that convert that shit yo
-
-    users = db.query(models.User).filter(models.User.id.in_(user_id_list)).all() #filtering by the list, typeshit
-    if not users:
-        raise HTTPException(status_code=404, detail="bro! you sure you got the right one?")
-    return users
-
-
-@app.put("/users/{user_id}", response_model=UserResponse) #okay this is a bit more complex, similar to the individual finding though
-def update_user(user_id: int, user: UserCreate, db: Session = Depends(get_db)): #so we have 2 input of user_id and user, the user is to update
-    existing_user = db.query(models.User).filter(models.User.id == user_id).first() #checking if that MF exists or not
-    if not existing_user:
-        raise HTTPException(status_code=404, detail="who you finding bro? whoever it is, they are not in here!")
-    
-    email_check = db.query(models.User).filter(models.User.email == user.email, models.User.id != user_id).first() 
-    #so we check if the new email is taken or not by checking into the database if the email returns an id that is the given id or not, kinda complex but great!
-    if email_check:
-        raise HTTPException(status_code=400, detail="this email is ALREADY TAKEN BRAHHHHHHH!")
-
-    existing_user.name = user.name
-    existing_user.age = user.age
-    existing_user.email = user.email
+        raise HTTPException(status_code=404, detail="User not found!") 
+    logging.info(f"User deleted: {user.email} by {current_user.email}") #logging the message
+    db.delete(user) #the simple action of deleting
     db.commit()
-    db.refresh(existing_user)
-    return existing_user
-
-
-@app.delete("/users/{user_id}") #similar to the one above
-def delete_user(user_id: int, db: Session = Depends(get_db)): 
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="who you trying to kill bro?")
-    
-    db.delete(user) #like this is the important thing of this function here
-    db.commit()
-    return {"message": "that motherfucker has been dematerialized"}
+    return {"message": "User deleted successfully"}
