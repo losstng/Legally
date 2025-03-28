@@ -103,6 +103,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise credentials_exception #invalid anything then this
 
+@app.get("/")
+def read_root():
+    return {"message": "Backend is live!"}
+
 @app.post("/login/") #logging in
 @limiter.limit("5/minute") #5 times per minute from that address
 def login(request: Request, user: UserLogin, db: Session = Depends(get_db)): #defining as request for limiter | defining the user form for the user to log in | getting the session
@@ -137,7 +141,7 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
     db.add(new_user) #adding into the database
     db.commit() #commit with autoflush disabled
     db.refresh(new_user) #refresh in the database
-    logging.info(f"User registered: {new_user.email} by {current_user.email}") #again loggin the information
+    #logging.info(f"User registered: {new_user.email} by {current_user.email}") #again loggin the information
     return {"message": "User registered successfully"} 
 
 

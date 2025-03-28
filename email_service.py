@@ -11,6 +11,7 @@ def send_otp_email(recipient_email, otp):   #defining this function execute
     subject = "Your OTP Code" 
     body = f"Your One-Time Password (OTP) is: {otp}. It will expire in 5 minutes."
 
+        #MIME stands for Multipurpose Internet Mail Extensions
     msg = MIMEText(body) #SMTP servers expect emails to follow the MIME format (Multipurpose Internet Mail Extensions) and this is a format which always include subject, from, and to, as defined above
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
@@ -24,3 +25,4 @@ def send_otp_email(recipient_email, otp):   #defining this function execute
         print(f"✅ OTP sent successfully to {recipient_email}") 
     except Exception as e:
         print(f"❌ Error sending OTP: {e}") # this could be a problem when something doesn't work, a fallback system
+
