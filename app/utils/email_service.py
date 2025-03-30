@@ -1,11 +1,14 @@
 import smtplib
 from email.mime.text import MIMEText
-
+import os
+from dotenv import load_dotenv
+import logging
+load_dotenv()
 #Email Configuration
 SMTP_SERVER = "smtp.mail.yahoo.com"  #set up
 SMTP_PORT = 587
-SENDER_EMAIL = "losstng@yahoo.com"  #from my email
-SENDER_PASSWORD = "cloybgzuimsjrbxy"  #unlikely to work as it usually requires OTP
+SENDER_EMAIL = os.getenv("EMAIL_ADDRESS")  #from my email
+SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD") #unlikely to work as it usually requires OTP
 
 def send_otp_email(recipient_email, otp):   #defining this function execute
     subject = "Your OTP Code" 
@@ -24,5 +27,5 @@ def send_otp_email(recipient_email, otp):   #defining this function execute
             server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string()) #and sending the email as simple as that, and the msg will be occupied and distributed by the SMTP
         print(f"✅ OTP sent successfully to {recipient_email}") 
     except Exception as e:
-        print(f"❌ Error sending OTP: {e}") # this could be a problem when something doesn't work, a fallback system
+        logging.error(f"Error sending OTP to {recipient_email}: {e}") # this could be a problem when something doesn't work, a fallback system
 
