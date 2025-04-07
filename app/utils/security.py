@@ -37,7 +37,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 
 def create_refresh_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES) #time delta is like setting the time
     to_encode.update({
         "exp": expire,
         "sub": data.get("email"),
@@ -47,21 +47,27 @@ def create_refresh_token(data: dict):
     })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login") #a dependency that tells FastAPI how to extract the JWT token from incoming requests for protected routes. and is where the client should send their credentials to get the token
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login") 
+#a parser + validator for authentication header
+# tell fastapit to expect a bearer token in 'bear <access_token>
+#create a dependency that can be injectted 
 
+#another session and decrypting the token, taking from the token, standard stuff
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    print("TOKEN RECEIVED:", token) 
 
-#another session
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)): #the dependency to read the token and opening session to the DB
-    credentials_exception = HTTPException(status_code=401, detail="Invalid credentials") 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub") #getting the email from the payload or the data | sub stands for subject—that is, the identity the token is about
-        if email is None: 
-            raise credentials_exception
+        email = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
         user = db.query(models.User).filter(models.User.email == email).first()
         if user is None:
-            raise credentials_exception
+            raise HTTPException(status_code=401, detail="User not found")
         return user
-    except JWTError:
-        raise credentials_exception
+    except Exception as e:
+        print("EXCEPTION:", e)
+        raise HTTPException(status_code=401, detail="Invalid or missing token")

@@ -11,7 +11,7 @@ import logging
 
 router = APIRouter()
 
-@router.post("/register", response_model=dict)
+@router.post("/register", response_model=dict) 
 def register(user: UserRegister, db: Session = Depends(get_db)):
     existing_user = db.query(models.User).filter(models.User.email == user.email).first()
     if existing_user:
@@ -20,7 +20,7 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
     if db.query(func.count(models.User.id)).scalar() == 0:
         user.role = "admin"
 
-    hashed_pw = hash_password(user.password)
+    hashed_pw = hash_password(user.password) #calling hashing user password
     new_user = models.User(
         name=user.name,
         age=user.age,
@@ -31,7 +31,7 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
 
     db.add(new_user)
     db.commit()
-    db.refresh(new_user)
+    db.refresh(new_user) #standard stuff
     return {"message": "User registered successfully"}
 
 
@@ -50,5 +50,5 @@ def delete_user(
 
     db.delete(user)
     db.commit()
-    logging.info(f"User deleted: {user.email} by {current_user.email}")
+    logging.info(f"User deleted: {user.email} by {current_user.email}") #standard logging
     return {"message": "User deleted successfully"}
