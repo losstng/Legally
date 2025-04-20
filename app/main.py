@@ -3,9 +3,14 @@ from app.utils.limiter import limiter, rate_limit_exceeded_handler
 from app.routers import auth, users
 from app.api import ask_routes
 from app.db.database import engine
+from app.schemas.ask import ApiResponse
 from app.db import models
 
-#python -m app.main
+#  export PYTHONPATH=$(pwd)
+#  python -m app.main
+#  python -m uvicorn main:app --reload
+
+# =>. python -m uvicorn app.main:app --reload
 
 # Create all DB tables (primitive), will be discarded or modified
 models.Base.metadata.create_all(bind=engine)
@@ -24,6 +29,12 @@ app.include_router(ask_routes.router, prefix="/ask", tags=["Q&A"])
 
 print("everything is working")
 
+from fastapi.routing import APIRoute
+
+for route in app.routes:
+    if isinstance(route, APIRoute):
+        print(f"{route.path} -> {route.methods}")
+
 @app.get("/")
 def root():
-    return {"message": "Backend is live!"} #checking system
+    return ApiResponse(success=True, data={"message": "Backend is live!"}) #checking system
