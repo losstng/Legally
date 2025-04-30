@@ -13,8 +13,8 @@ const MessageBubble = ({role, text }: MessageBubbleProps) => {
         <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-2`}>
              {/* flex - horizontal layout arrangement*/}
              {/* Here, ${isUser ? ...} dynamically chooses a class depending on the value of isUser. */}
-             {/* damn so ` and $ then : is just dynamically allow the function to react*/}
-             {/* so $ then ? then : are ternary operator unique to TS, especially in True or False */}
+             {/* damn so ` and $ : is just dynamically allow the function to react like f "" in python*/}
+             {/* so $ then ? then : are ternary operator used in Boolean */}
              {/* so the one after ? is always True, and after : is always False*/}
              {/* essentially an inline "if-else" */}
             <div 
@@ -30,4 +30,4 @@ const MessageBubble = ({role, text }: MessageBubbleProps) => {
     );
 };
 
-export default MessageBuble;
+export default MessageBubble;

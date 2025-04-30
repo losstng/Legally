@@ -4,7 +4,7 @@ from uuid import uuid4
 from app.db.database import get_db
 from app.db import models
 from app.db.models import UserFile
-from app.schemas.ask import ApiResponse
+from app.schemas.ask import ApiResponse, HistoryResponseItem
 from app.utils.security import get_current_user
 from datetime import datetime
 from app.utils.redis import redis_client
@@ -31,7 +31,7 @@ async def ask_question( # async function, where. it is single threaded but effic
     file: UploadFile = File(None), # default value is none, opened for file upload
     file_key: str = Form(None), # same default value, but it is aform for string
     db: Session = Depends(get_db), # getting the session
-    current_user: models.User = Depends(get_current_user) #authentication and stuff
+    # current_user: models.User = Depends(get_current_user) #authentication and stuff
 ):
     cached_answer = redis_client.get(f"qa:{question}") # try if any similar questioned has been asked
     if cached_answer: # if "yes" then return the data and the message of Boolean True
@@ -83,7 +83,18 @@ async def delete_user_file_route(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ): # standard inputs
+
+    file = db.query(models.UserFile).filter(models.UserFile.file_key == file_key).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="file not found!")
+    
+    if current_user.id != file.user_id:
+        raise HTTPException(status_code=403, detail="Admins only!") # getting the attributes
+
+    db.delete(file)
+    db.commit()
     return ApiResponse(success=True, data={"message": "File deleted"})
+
 # GET /history
 @router.get("/history", response_model=ApiResponse)
 async def get_history(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -95,7 +106,7 @@ async def get_history(db: Session = Depends(get_db), current_user: models.User =
         HistoryResponseItem( # we got a function for it so it's different from the files
             id=convo.id,
             question=convo.question,
-            answer=convo.answer,
+            answer=convo.full_answer,
             timestamp=convo.timestamp
         ) for convo in conversations # again like getting the files, we have to loop through all of them
     ])

@@ -5,9 +5,9 @@ from datetime import timedelta
 from jose import JWTError, jwt
 from app.db.database import get_db
 from app.db import models
-from app.schemas.user import UserRegister, UserLogin, OTPVerify
+from app.schemas.user import UserRegister, UserLogin, OTPVerify, EmailOnly, PasswordReset
 from app.schemas.ask import ApiResponse
-from app.utils.security import hash_password, verify_password, create_access_token, create_refresh_token, SECRET_KEY, ALGORITHM
+from app.utils.security import hash_password, verify_password, create_refresh_token, SECRET_KEY, ALGORITHM
 from app.utils.email_service import send_otp_email
 from app.utils.limiter import limiter
 import random, time
@@ -72,31 +72,54 @@ async def login(request: Request, user: UserLogin, db: Session = Depends(get_db)
     return ApiResponse(success=True, data={"message": "OTP sent! Please verify to get your token."}) # advanced security stuff
 
 
-@router.post("/verify-otp") # to get the token * no limiter
+@router.post("/verify-otp")
 async def verify_otp_route(otp_data: OTPVerify, db: Session = Depends(get_db)):
     result = verify_otp(otp_data.email, otp_data.otp)
-    if result == "OTP verified": # this has been predefined
-        user = db.query(models.User).filter(models.User.email == otp_data.email).first() # getting this data for later attributes usage
-        access_token = create_access_token(data={"email": otp_data.email, "role": user.role}, expires_delta=timedelta(minutes=5)) # encoding multiple data
-        refresh_token = create_refresh_token(data={"email": otp_data.email}) # encoding less data
-        return ApiResponse(success=True, data={ # message under JSON
-            "access_token": access_token, # short term
-            "refresh_token": refresh_token, # multiple, longer validity
-            "token_type": "bearer"
-        }) #these will be returned in JSON and therefore can be used for later, however these 2 lazter must be separated
-    raise HTTPException(status_code=400, detail=result) 
-    return ApiResponse(success=False, error=result)
+    if result != "OTP verified":
+        raise HTTPException(status_code=400, detail=result)
 
-# these 2 requires further review
+    user = db.query(models.User).filter(models.User.email == otp_data.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
 
-@router.post("/refresh-token") # for refresh topen
-async def refresh_token_route(token: str = Depends(oauth2_scheme)): # again authenitcating the token
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]) 
-        if payload.get("type") != "refresh":
-            raise HTTPException(status_code=400, detail="Invalid token type.")
-        email = payload.get("sub")
-        new_access_token = create_access_token(data={"email": email, "role": payload.get("role")})
-        return ApiResponse(success=True, data={"access_token": new_access_token, "token_type": "bearer"})
-    except JWTError:
-        return ApiResponse(success=True, data={"message": "OTP sent! Please verify to get your token."})
+    refresh_token = create_refresh_token(
+        data={"email": otp_data.email, "role": user.role},
+        expires_delta=timedelta(hours=24)
+    )
+
+    return ApiResponse(success=True, data={
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    })
+
+@router.post("/forgot-password")
+async def forgot_password(user: EmailOnly, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    otp = generate_otp()
+    store_otp(user.email, otp)
+    send_otp_email(user.email, otp)
+
+    return ApiResponse(success=True, data={"message": "OTP sent to email for password reset"})
+
+from app.schemas.user import PasswordReset
+
+@router.post("/reset-password")
+async def reset_password(payload: PasswordReset, db: Session = Depends(get_db)):
+    # Step 1: Verify OTP
+    result = verify_otp(payload.email, payload.otp)
+    if result != "OTP verified":
+        raise HTTPException(status_code=400, detail=result)
+
+    # Step 2: Find user
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Step 3: Hash and update password
+    user.hashed_password = hash_password(payload.new_password)
+    db.commit()
+
+    return ApiResponse(success=True, data={"message": "Password has been reset successfully."})

@@ -40,3 +40,17 @@ class UserLogin(BaseModel): # basic
 class OTPVerify(BaseModel): # basic
     email: EmailStr
     otp: str
+
+class EmailOnly(BaseModel):
+    email: EmailStr
+
+class PasswordReset(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str = Field(..., min_length=6, max_length=20)
+
+    @validator("new_password")
+    def must_have_special_char(cls, v):
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            raise ValueError("Password must include at least one special character.")
+        return v
