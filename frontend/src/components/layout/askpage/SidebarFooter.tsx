@@ -1,7 +1,8 @@
-import { useUser } from "@/context/UserContext"; // hypothetically
+import { useAuth } from "@/utils/authcontext"; // hypothetically
+import Link from "next/link";
 
 export default function SidebarFooter() {
-  const { user, logout } = useUser();
+  const { user, logout } = useAuth();
 
   return (
     <div className="px-4 py-4 border-t border-gray-800">

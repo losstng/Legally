@@ -21,10 +21,12 @@ class Conversation(Base):
 
     id = Column(Integer, primary_key=True, index=True) # primary key, standard stuff
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False) #fogreign key that postgresql has to parse and find themself
+    chat_session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=True)
     question = Column(Text, nullable=False)
     base_answer = Column(Text, nullable=False) #nullable is essentialy cannot be empty
     full_answer = Column(Text, nullable=False) #nullable is essentialy cannot be empty
     timestamp = Column(DateTime(timezone=True), server_default=func.now()) #default of where the server is located right now.
+    chat_session = relationship("Chatsession", back_populates="qna_entries")
 
 class UserFile(Base):
     __tablename__ = "user_files" # standard stuff
@@ -40,3 +42,13 @@ class UserFile(Base):
 
     user = relationship("User", back_populates="files") # establishes a relationship 
     # the corresponder to what we saw in the first model, without this, the other wouldn't have worked
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    qna_entries = relationship("Conversation", back_populates="chat_session", cascade="all, delete-orphan")

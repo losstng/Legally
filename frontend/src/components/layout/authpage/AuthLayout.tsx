@@ -13,3 +13,4 @@ export default function AuthlAyout({ children }: { children: React.ReactNode}) {
     </div>
   );
 }
+// the children here are below, essentially what will be passed in the main page.tsx

@@ -15,7 +15,20 @@ const FileUploader = ({ onFileUpload, file }) => { // props 1 callback and 1 obj
         // ? is the optional chaining operator, asking if files exist or not to continue
         // [o] refer to the first item
         if (!selectedFile) return;
+        
+        if (!selectedFile.type.startsWith("application/")) {
+            alert("Only document files are allowed (PDF, DOC, TXT).");
+            return;
+        }
+        
+        if (selectedFile.size > 5 * 1024 + 1024) {
+            alert("File Must be smaller than 5MB.");
+            return;
+        }
+
         onFileUpload(selectedFile);
+
+        fileInputRef.current!.value = "";
     };
 
     // we have a label above in attach file:

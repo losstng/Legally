@@ -30,8 +30,9 @@ async def ask_question( # async function, where. it is single threaded but effic
     question: str = Form(...), 
     file: UploadFile = File(None), # default value is none, opened for file upload
     file_key: str = Form(None), # same default value, but it is aform for string
+    chat_session_id: int =Form(None),
     db: Session = Depends(get_db), # getting the session
-    # current_user: models.User = Depends(get_current_user) #authentication and stuff
+    current_user: models.User = Depends(get_current_user) #authentication and stuff
 ):
     cached_answer = redis_client.get(f"qa:{question}") # try if any similar questioned has been asked
     if cached_answer: # if "yes" then return the data and the message of Boolean True
@@ -58,7 +59,7 @@ async def ask_question( # async function, where. it is single threaded but effic
     redis_client.setex(f"qa:{question}", 3600, full) # caching the response for storage efficiency
     # setex = set expiry
     # what will be the key, what is the length for epxiration, and what is the data in it
-    convo = models.Conversation(user_id=current_user.id, question=question, base_answer=base, full_answer=full)
+    convo = models.Conversation(user_id=current_user.id, chat_session_id=chat_session_id, question=question, base_answer=base, full_answer=full)
     # saving to database, but still it begs the question of multiple Q&A in one convo, could be inefficient
     db.add(convo) 
     db.commit()
@@ -71,7 +72,8 @@ async def ask_question( # async function, where. it is single threaded but effic
 
 @router.get("/files")
 async def list_user_files(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    files = db.query(models.UserFile).filter(models.UserFile.user_id == current_user.id).all() # get all of them files
+    files = db.query(models.UserFile).filter(models.UserFile.user_id == current_user.id).order_by(models.UserFile.upload_time.desc()).all()
+     # get all of them files
     return ApiResponse(success=True, data=[
     {"file_key": f.file_key, "filename": f.filename, "uploaded": f.upload_time}
     for f in files # looping through to get all of the files for the JSON response
@@ -95,19 +97,63 @@ async def delete_user_file_route(
     db.commit()
     return ApiResponse(success=True, data={"message": "File deleted"})
 
-# GET /history
 @router.get("/history", response_model=ApiResponse)
 async def get_history(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    conversations = db.query(models.Conversation).filter(
-        models.Conversation.user_id == current_user.id
-    ).order_by(models.Conversation.timestamp.desc()).all() # decreasing time and all of them, using the user id
+    sessions = db.query(models.ChatSession).filter(models.ChatSession.user_id == current_user.id).all()
+
+    history_data = []
+    for session in sessions:
+        entries = db.query(models.Conversation).filter_by(chat_session_id=session.id).order_by(models.Conversation.timestamp).all()
+        history_data.append({
+            "session_id": session.id,
+            "title": session.title,
+            "conversations": [
+                {
+                    "id": c.id,
+                    "question": c.question,
+                    "answer": c.full_answer,
+                    "timestamp": c.timestamp,
+                }
+                for c in entries
+            ]
+        })
+
+    return ApiResponse(success=True, data=history_data)
+
+@router.post("/session", response_model=ApiResponse)
+async def create_chat_session(title: str = Form(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    session = models.ChatSession(user_id=current_user.id, title=title)
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return ApiResponse(success=True, data={"session_id": session.id, "title": session.title})
+
+@router.get("/session", response_model=ApiResponse)
+async def list_chat_sessions(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    sessions = db.query(models.ChatSession).filter(models.ChatSession.user_id == current_user.id).all()
+    return ApiResponse(success=True, data=[{"id": s.id, "title": s.title, "created_at": s.created_at} for s in sessions])
+
+@router.get("/session/{session_id}", response_model=ApiResponse)
+async def get_conversation_by_session(session_id: int, db: Session =Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    entries = db.query(models.Conversation).filter(
+        models.Conversation.user_id == current_user.id,
+        models.Conversation.chat_session_id ==session_id
+    ).order_by(models.Conversation.timestap.asc()).all()
 
     return ApiResponse(success=True, data=[
-        HistoryResponseItem( # we got a function for it so it's different from the files
-            id=convo.id,
-            question=convo.question,
-            answer=convo.full_answer,
-            timestamp=convo.timestamp
-        ) for convo in conversations # again like getting the files, we have to loop through all of them
+            { 
+            "id": c.id,
+            "question": c.question,
+            "answer": c.full_answer,
+            "timestamp": c.timestamp
+        } for c in entries
     ])
 
+@router.delete("/session/{session_id}")
+async def delete_chat_session(session_id: int, db: Session= Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    session = db.query(models.ChatSession).filter_by(id=session_id, user_id=current_user.id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found bro!")
+    db.delete(session)
+    db.commit
+    return ApiResponse(success=True, data={"message": "Session deleted"})

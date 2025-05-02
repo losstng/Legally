@@ -1,12 +1,28 @@
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import SidebarNavigation from "@/components/settings/Sidebar/SidebarNavigation";
+
 export default function MiscLayout({ children }: { children: React.ReactNode }) {
-    return (
-      <div className="flex flex-col min-h-screen bg-gray-50">
-        <header className="h-16 flex items-center justify-center bg-white shadow">
-          <div className="text-xl font-bold">Legally - Settings</div>
-        </header>
-        <main className="flex-1 p-8">
-          {children}
-        </main>
-      </div>
-    );
-  }
+  const pathname = usePathname();
+
+  // Determine current active tab based on route path
+  const activeTab: "Profile" | "Others" = pathname.includes("/profile") ? "Profile" : "Others";
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <SidebarNavigation
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          window.location.href = tab === "Profile" ? "/settings/profile" : "/settings/legal";
+        }}
+      />
+
+      {/* Main Content */}
+      <main className="flex-1 p-8">
+        {children}
+      </main>
+    </div>
+  );
+}

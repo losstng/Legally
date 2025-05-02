@@ -7,7 +7,13 @@ export default function ResetPasswordForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const email = searchParams.get("email") || "";
+    // This hook (from Next.js’ app router) gives you access to the current URL’s query string.
+    // Example URL: https://yoursite.com/auth/verify?email=abc@example.com
+    // .get("email") retrieves the value of the email parameter from the URL.
 
+    // useState("") returns an array:
+    // → ["", function to update the state]
+    // Name: Array Destructuring
     const [otp, setOtp] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [error, setError] = useState("");
@@ -21,7 +27,8 @@ export default function ResetPasswordForm() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp, newPassword: newPassword }),
-            });
+            }); // still standard stuff
+            // email is prefilled here
 
             const data = await res.json();
             if (res.ok && data.success) {
@@ -31,7 +38,7 @@ export default function ResetPasswordForm() {
             }
         } catch {
             setError("Network error");
-        }
+        } // no logging here
     };
 
     return (
@@ -44,7 +51,7 @@ export default function ResetPasswordForm() {
             value={otp}
             onChange={(e) => setOtp(e.target.value)}
             required
-          />
+          /> {/* the place for OTP */}
           <input
             type="password"
             placeholder="New Password"
@@ -52,7 +59,7 @@ export default function ResetPasswordForm() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
-          />
+          />  {/* the place for password */}
           {error && <p className="text-red-500 text-sm">{error}</p>}
           <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded">
             Submit

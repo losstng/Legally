@@ -13,10 +13,16 @@ export default function RegisterForm () {
         password: "",
     });
     const [error, setError] = useState("");
+    // useState("") returns an array: * led by useState
+    // → ["", function to update the state]
+    // Name: Array Destructuring
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setForm({ ...form})
-    };
+        setForm({ ...form, [e.target.type]: e.target.value})
+    }; // since form now enatils multiple value
+    // we have to set form through destructuring, to do each one by one
+    // handleChange knows which value to update through the TYPE attribute down below
+    // using NAME attribute is preferred as type require case specific
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,21 +32,22 @@ export default function RegisterForm () {
             const res = await fetch (`${process.env.NEXT_PUBLIC_API_URL}/auth/register`, {
                 method: "POST",
                 headers: { "Content-Type" : "application/json" },
-                body: JSON.stringify(form),
+                body: JSON.stringify(form), // the entire form here, with its key & data inside
             });
 
             const data = await res.json();
             if (res.ok && data.success) {
                 router.push(`/auth/verify?email{encodeURIComponent(form.email)}`);
-            } else {
+            } else { // push - render not reloading
                 setError(data.detail || data.error || "Registration failed.");
-        
             }
         } catch (err) {
             setError("Network error");
-        }
+        } 
     };
 
+    // so here is where we see everything in action, if u went through in descending order...
+    // u should have a good grasp already
     return (
         <>    
         <form onSubmit={handleRegister} className="space-y-4 p-4 max-w-sm mx-auto">

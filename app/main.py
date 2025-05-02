@@ -5,6 +5,7 @@ from app.api import ask_routes
 from app.db.database import engine
 from app.schemas.ask import ApiResponse
 from app.db import models
+from app.routers import misc
 
 #  export PYTHONPATH=$(pwd)
 #  python3 -m app.main
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(ask_routes.router, prefix="/ask", tags=["Q&A"])
+app.include_router(misc.router, prefix="/misc", tags=["Misc"])
 
 print("everything is working")
 
