@@ -7,5 +7,3 @@ This is only a project to learn, and to showcase everything I had learned and is
 Through this project, on everyline of code, I have written at least some comments to enforce my knowledge on programming.
 I am very proud of myself on taking this leap into this brand new world. :D
 
-Technical Introduction:
-app = backend
