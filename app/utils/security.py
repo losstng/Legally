@@ -24,12 +24,13 @@ def hash_password(password: str):
 def verify_password(plain_password, hashed_password): #will be used later
     return pwd_context.verify(plain_password, hashed_password) #verifying the password given and the password in the database
 
-def create_refresh_token(data: dict):
+def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES) #time delta is like setting the time
+    expire = datetime.utcnow() + expires_delta
     to_encode.update({
         "exp": expire,
         "sub": data.get("email"),
+        "role": data.get("role"),  # <-- this was missing
         "type": "refresh",
         "iat": datetime.utcnow(),
         "iss": "immigration.app"
@@ -37,7 +38,7 @@ def create_refresh_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login") 
-#a parser + validator for authentication header
+#a parser h+ validator for authentication header
 # tell fastapit to expect a bearer token in 'bear <access_token>
 #create a dependency that can be injectted 
 

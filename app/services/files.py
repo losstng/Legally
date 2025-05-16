@@ -6,32 +6,30 @@ from app.services.vector_store import store_chunks_in_vector_db
 from app.db.models import UserFile
 from fastapi import HTTPException
 
+import logging
+import shutil
+
+logger = logging.getLogger(__name__)
+
 async def handle_file_upload(file, user_id: int, db: Session) -> str: 
-    file_key = f"{user_id}_{uuid4().hex}" # formatting a string and generates a randomly generated Universally Unique Identifier (UUID)
-    # the hex is for a plain hexadecimal string — without any dashes
-    file_path = f"data/user_{user_id}/{file_key}_{file.filename}" # this we dont't need cause it is direct
+    file_key = f"{user_id}_{uuid4().hex}" 
+    file_path = f"data/user_{user_id}/{file_key}_{file.filename}"
 
-    os.makedirs(os.path.dirname(file_path), exist_ok=True) # os.makedirs() to suppress errors if the directory already exists.
-    with open(file_path, "wb") as buffer: 
-        # with Ensures the file is properly closed after the block finishes (even if errors happen).
-        # wb stands for write binary
-        # buffer becomes the file object you can write to.  
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-        # Read from file.file, and write everything into buffer.
 
-        # so we make a buffer first to write the binary in and then if all goes well, we save it
-
-        # then now the file path should be ready to extract context from
-
-    chunks = load_and_chunk(file_path) 
+    chunks = load_and_chunk(file_path)
+    if all("fallback" in chunk.page_content.lower() for chunk in chunks):
+        raise ValueError("This file appears to be a placeholder.")
     vector_path = f"db/faiss_user_{user_id}_{file_key}"
     store_chunks_in_vector_db(chunks, persist_dir=vector_path)
 
     db_file = UserFile(
         user_id=user_id,
-        file_key=file_key, # what we did was for this one
+        file_key=file_key,
         filename=file.filename,
-        file_path=file_path # and this one
+        file_path=file_path
     )
     db.add(db_file)
     db.commit()

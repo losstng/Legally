@@ -3,7 +3,8 @@ from sqlalchemy.sql import func
 from app.db.database import Base
 from sqlalchemy.orm import relationship
 
-class User(Base): # table for user
+
+class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -12,43 +13,44 @@ class User(Base): # table for user
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     role = Column(String, default="user")
-    files = relationship("UserFile", back_populates="user", cascade="all, delete") 
-    # relationship here is important, it is regarding object relationship management, like keys
-    # name of the related model, bi-directional relationship for the "user" attribute, 
-                # controls how related objects behave when the parent is updated or deleted
+
+    files = relationship("UserFile", back_populates="user", cascade="all, delete")
+    chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    id = Column(Integer, primary_key=True, index=True) # primary key, standard stuff
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False) #fogreign key that postgresql has to parse and find themself
-    chat_session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=True)
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)  # <-- MISSING BEFORE
+    chat_session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False)
     question = Column(Text, nullable=False)
-    base_answer = Column(Text, nullable=False) #nullable is essentialy cannot be empty
-    full_answer = Column(Text, nullable=False) #nullable is essentialy cannot be empty
-    timestamp = Column(DateTime(timezone=True), server_default=func.now()) #default of where the server is located right now.
-    chat_session = relationship("Chatsession", back_populates="qna_entries")
+    base_answer = Column(Text, nullable=False)
+    full_answer = Column(Text, nullable=False)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="conversations")
+    chat_session = relationship("ChatSession", back_populates="qna_entries")
 
 class UserFile(Base):
-    __tablename__ = "user_files" # standard stuff
+    __tablename__ = "user_files"
 
-    id = Column(Integer, primary_key=True, index=True) # still standard
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE")) 
-    # it is column of integer that uses the foreign key of the model "users" 
-    # and when that key is deleted, use the cascade defined on that foreign key 
-    file_key = Column(String, unique=True, nullable=False) # standard
-    filename = Column(String, nullable=False) # standard
-    file_path = Column(String, nullable=False) # standard
-    upload_time = Column(DateTime(timezone=True), server_default=func.now()) # standard
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    file_key = Column(String, unique=True, nullable=False)
+    filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    upload_time = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", back_populates="files") # establishes a relationship 
-    # the corresponder to what we saw in the first model, without this, the other wouldn't have worked
+    user = relationship("User", back_populates="files")
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    user = relationship("User", back_populates="chat_sessions")
 
     qna_entries = relationship("Conversation", back_populates="chat_session", cascade="all, delete-orphan")

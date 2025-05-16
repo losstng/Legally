@@ -14,8 +14,7 @@ load_dotenv()
 
 openai_model = ChatOpenAI(
     temperature=0.2,
-    model=""
-) # this is just to get the base answer
+    model=os.getenv("LLM_MODEL")) # this is just to get the base answer
 
 def get_system_prompt(lang: str, context: str) -> str: # base answer for system prompt # base answer
     if lang == "de":

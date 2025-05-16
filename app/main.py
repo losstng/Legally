@@ -11,7 +11,8 @@ from app.routers import misc
 #  python3 -m app.main
 #  python3 -m uvicorn app.main:app --reload
 
-# =>. python3 -m uvicorn app.main:app --reload
+# =>. python3 -m uvicorn app.main:app --reload --log-level debug
+# redis-server
 
 # Create all DB tables (primitive), will be discarded or modified
 models.Base.metadata.create_all(bind=engine)

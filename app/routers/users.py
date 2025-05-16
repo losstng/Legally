@@ -1,62 +1,61 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from app.db import models
 from app.db.database import get_db
-from app.schemas.user import UserRegister, PasswordChangeRequest
+from app.schemas.user import UserRegister, PasswordChangeRequest, EmailRequest
 from app.schemas.ask import ApiResponse
 from app.utils.security import hash_password, get_current_user, verify_password
 from dotenv import load_dotenv
 from fastapi.responses import StreamingResponse
+from app.utils.redis import redis_client
+from app.utils.email_service import send_otp_email
 import csv
 import io
+import random
 load_dotenv()
 
 import logging
 
+def generate_otp(): #standard generation 
+    return str(random.randint(100000, 999999))
+
+def store_otp(email, otp): 
+    redis_client.setex(f"otp:{email}", 300, otp) # caching and set expiry, leveraging redis
+    
+def verify_otp(email, otp_input):  #another function
+    saved_otp = redis_client.get(f"otp:{email}")
+    if not saved_otp:
+        return "OTP expired or not found, tough luck!"
+    return "OTP verified" if saved_otp == otp_input else "Invalid OTP" # simple stuff
+
 router = APIRouter() # again establishing routers
 
-#@router.post("/register", response_model=dict)  # in dictionary to register, * due for a review
-#def register(user: UserRegister, db: Session = Depends(get_db)):
-#    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
-#    if existing_user:
-#        raise HTTPException(status_code=400, detail="Email already registered.") # checking emal
-    
-#    if db.query(func.count(models.User.id)).scalar() == 0:
-#        user.role = "admin" # counting
+@router.post("/register", response_model=ApiResponse)
+def register(user: UserRegister, db: Session = Depends(get_db)):
+    print("Incoming user:", user.dict())  # Add this
+    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered.")
 
-#    hashed_pw = hash_password(user.password) #calling hashing user password
-#    new_user = models.User(
-#        name=user.name,
-#        age=user.age,
-#        email=user.email,
-#        hashed_password=hashed_pw,
-#        role=user.role
-#    )
-# THIS IS REDUNDANT AND WILL SOON BE UPDATED
-#    db.add(new_user)
-#    db.commit()
-#    db.refresh(new_user) #standard stuff
-#    return ApiResponse(success=True, data={"message": "User registered successfully"})
+    # Assign admin if first user
+    if db.query(func.count(models.User.id)).scalar() == 0:
+        user.role = "admin"
 
+    hashed_pw = hash_password(user.password)
+    new_user = models.User(
+        name=user.name,
+        age=user.age,
+        email=user.email,
+        hashed_password=hashed_pw,
+        role=user.role or "user"
+    )
 
-@router.delete("/{user_id}", response_model=dict) # good 
-def delete_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user) # checking the role
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admins only!") # getting the attributes
-
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found!")
-
-    db.delete(user)
+    db.add(new_user)
     db.commit()
-    logging.info(f"User deleted: {user.email} by {current_user.email}") #standard logging
-    return ApiResponse(success=True, data={"message": "User deleted successfully"})
+    db.refresh(new_user)
+
+    return ApiResponse(success=True, data={"message": "User registered successfully"})
 
 @router.delete("/delete-user", response_model=dict)
 def delete_own_account(
@@ -70,7 +69,29 @@ def delete_own_account(
     db.delete(user)
     db.commit()
     logging.info(f"User self-deleted: {current_user.email}")
-    return ApiResponse(success=True, data={"message": "Your account has been deleted."})
+    return ApiResponse(success=True, data={"message": "User deleted"})
+
+@router.post("/request-password-change", response_model=ApiResponse)
+def request_password_change(
+    payload: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    user = db.query(models.User).filter(models.User.id == current_user.id).first()
+    if not user or not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect current password.")
+
+    # Generate OTP
+    otp = generate_otp()
+    store_otp(user.email, otp)
+
+    # Temporarily store new password in Redis (or pass as query param if minimal risk)
+    redis_client.setex(f"pending_password:{user.email}", 300, hash_password(payload.new_password))
+
+    # Send OTP
+    send_otp_email(user.email, otp)
+
+    return ApiResponse(success=True, data={"email": user.email, "message": "OTP sent to confirm password change."})
 
 @router.post("/change-password", response_model=ApiResponse)
 def change_password(
@@ -85,6 +106,7 @@ def change_password(
     user.hashed_password = hash_password(payload.new_password)
     db.commit()
     return ApiResponse(success=True, data={"message": "Password updated successfully."})
+
 
 @router.get("/export-data", response_class=StreamingResponse)
 def export_user_data(
@@ -145,3 +167,16 @@ def get_profile_info(
         "age": current_user.age,
         "role": current_user.role,
     })
+
+@router.post("/request-delete", response_model=ApiResponse)
+def request_account_deletion(payload: EmailRequest, db: Session = Depends(get_db)):
+    email = payload.email
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No user with this email.")
+
+    otp = generate_otp()
+    store_otp(email, otp)
+    send_otp_email(email, otp)
+
+    return ApiResponse(success=True, data={"message": f"OTP sent to {email} for account deletion confirmation."})

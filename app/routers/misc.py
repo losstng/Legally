@@ -18,9 +18,9 @@ class ContactForm(BaseModel):
 async def send_contact_form(payload: ContactForm):
     try:
         msg = EmailMessage()
-        msg["Subject"] = f"Contact Form — {payload.subject}"
-        msg["From"] = payload.email
-        msg["To"] = "long131005@gmail.com"
+        msg["Subject"] = f"Contact by Legally — {payload.email} — {payload.subject}"
+        msg["From"] = f"Legally Contact <{os.getenv('EMAIL_ADDRESS')}>"
+        msg["To"] = os.getenv("EMAIL_ADDRESS")
         msg.set_content(f"From: {payload.name} <{payload.email}>\n\n{payload.message}")
 
         with smtplib.SMTP_SSL("smtp.mail.yahoo.com", 465) as smtp:

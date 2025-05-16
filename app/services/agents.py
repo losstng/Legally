@@ -1,8 +1,10 @@
 from langchain_openai import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
-llm = ChatOpenAI(temperature=0.3, model="") # unspecified model with low temperature
+llm = ChatOpenAI(temperature=0.3, model=os.getenv("LLM_MODEL")) # unspecified model with low temperature
 def get_agent_prompt(role: str, lang: str) -> str: # 3 levels to help level the blackbox model
     if role == "explainer": # included a json message for for all languages
         return {

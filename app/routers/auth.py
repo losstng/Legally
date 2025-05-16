@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
 from datetime import timedelta
@@ -14,6 +14,7 @@ import random, time
 from app.utils.redis import redis_client
 from dotenv import load_dotenv
 load_dotenv()
+
 # importing some stuff for the essential authentication process
 
 
@@ -53,6 +54,9 @@ async def register(user: UserRegister, db: Session = Depends(get_db)): # async f
         role=user.role
     ) #creating a class within to be then apply in the database
 
+    otp = generate_otp()
+    store_otp(user.email, otp) # standard
+    send_otp_email(user.email, otp) # standard
     db.add(new_user)
     db.commit()
     db.refresh(new_user) #connecting to
@@ -123,3 +127,4 @@ async def reset_password(payload: PasswordReset, db: Session = Depends(get_db)):
     db.commit()
 
     return ApiResponse(success=True, data={"message": "Password has been reset successfully."})
+
